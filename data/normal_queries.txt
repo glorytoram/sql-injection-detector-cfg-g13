@@ -1,0 +1,11 @@
+# 10 legitimate queries - the grammar scanner should mark every one SAFE
+SELECT * FROM users WHERE id = '5'
+SELECT name, email FROM users WHERE id = 7
+SELECT * FROM products WHERE price > 100
+SELECT * FROM users WHERE username = 'alice'
+SELECT id, name FROM employees WHERE dept = 'IT' AND salary >= 50000
+SELECT * FROM orders WHERE status = 'shipped' ORDER BY id DESC LIMIT 10
+SELECT * FROM users WHERE name LIKE 'A%'
+SELECT title FROM books WHERE year IN (2019, 2020, 2021)
+SELECT * FROM users WHERE name = 'O''Brien'
+SELECT * FROM notes WHERE text = 'buy milk; call mom'
