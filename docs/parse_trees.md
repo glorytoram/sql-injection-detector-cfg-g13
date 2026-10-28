@@ -27,6 +27,11 @@ Query
             ├── Operator (=)
             └── String ('5')
 ```
+
+### Parse Tree Diagram
+
+![Normal SQL Query Parse Tree](images/normal_query.png)
+
 ## 3. SQL Injection Example
 
 Example of a query containing a suspicious condition:
@@ -57,6 +62,10 @@ Query
                 ├── Operator (=)
                 └── String ('1')
 ```
+
+### Parse Tree Diagram
+
+![Suspicious SQL Query Parse Tree](images/suspicious_query.png)
 
 ## 4. Comparison Between Normal and Suspicious Queries
 
