@@ -15,7 +15,7 @@
 | Priyadarshini M | SQL grammar (CFG) and hand-drawn parse trees | `docs/grammar.md`, `docs/parse_trees.md`, `docs/images/` |
 | Poojith B Gowda | Python SQL lexer and parser | `sqli/lexer.py`, `sqli/parser.py`, `sqli/tree.py` |
 | Kiran S V | Structural anomaly detector | `sqli/detector.py` |
-| Kushagra Sharma | Blacklist bypass demo, tests and slides | `sqli/blacklist.py`, `sqli/evaluate.py`, `data/`, `tests/`, `docs/slides_outline.md` |
+| Kushagra Sharma (`@glorytoram`) | Blacklist bypass demo, tests and slides | `sqli/blacklist.py`, `sqli/evaluate.py`, `data/`, `tests/`, `docs/slides_outline.md` |
 
 ---
 
