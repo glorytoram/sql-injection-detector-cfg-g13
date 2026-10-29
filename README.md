@@ -1,241 +1,121 @@
 # SQL Injection Detector via Grammar Analysis
 
-**Theory of Computation (BIS503) · Section B · 5th Semester, Information Science & Engineering**
-**Mini Project 13 · Group 13**
+**Theory of Computation (BIS503) | Section B | Mini Project 13 | Group 13**
 
 | | |
 |---|---|
 | **Theory concept** | Context-Free Grammar (CFG): ambiguity and parse-tree analysis |
-| **Application area** | Cybersecurity: Web Application Firewall (WAF) logic |
-| **Language** | Python 3.8+ (standard library only, no third-party packages) |
-| **Team size** | 4 students |
+| **Application** | Cybersecurity: Web Application Firewall (WAF) logic |
+| **Language** | Python 3.8+ (standard library only, nothing to install) |
+
+## Team
+
+| Member | Role | Main files |
+|---|---|---|
+| Priyadarshini M | SQL grammar (CFG) and hand-drawn parse trees | `docs/grammar.md`, `docs/parse_trees.md`, `docs/images/` |
+| Poojith B Gowda | Python SQL lexer and parser | `sqli/lexer.py`, `sqli/parser.py`, `sqli/tree.py` |
+| Kiran S V | Structural anomaly detector | `sqli/detector.py` |
+| Kushagra Sharma | Blacklist bypass demo, tests and slides | `sqli/blacklist.py`, `sqli/evaluate.py`, `data/`, `tests/`, `docs/slides_outline.md` |
 
 ---
 
-## Table of Contents
+## 1. The idea in one minute
 
-1. [Overview](#1-overview)
-2. [Theory Background](#2-theory-background)
-3. [Features](#3-features)
-4. [Project Structure](#4-project-structure)
-5. [Requirements and Installation](#5-requirements-and-installation)
-6. [How to Run](#6-how-to-run)
-7. [Expected Output](#7-expected-output)
-8. [Test Cases](#8-test-cases)
-9. [The Grammar](#9-the-grammar)
-10. [Detection Rules](#10-detection-rules)
-11. [Evaluation: Grammar vs Blacklist](#11-evaluation-grammar-vs-blacklist)
-12. [Policy and Configuration](#12-policy-and-configuration)
-13. [Mapping to the Project Brief](#13-mapping-to-the-project-brief)
-14. [Team and Contributions](#14-team-and-contributions)
-15. [Limitations](#15-limitations)
-16. [Troubleshooting](#16-troubleshooting)
+An SQL injection attack works by **changing the structure** of a query.
 
----
-
-## 1. Overview
-
-SQL injection works by changing the **grammatical structure** of a query. A normal query such as
+A normal query has one simple condition in its `WHERE` clause:
 
 ```sql
 SELECT * FROM users WHERE id = '5'
 ```
 
-has one parse tree, with a single equality condition under `WHERE`. An injected query such as
+An injected query gets an extra `OR` branch the programmer never wrote:
 
 ```sql
 SELECT * FROM users WHERE id = '' OR '1'='1'
 ```
 
-has a structurally different parse tree. The `WHERE` clause now contains an `OR` branch that the developer never intended.
+Because `'1'='1'` is always true, this returns **every row**. The two queries have **different parse trees**:
 
-This project builds a scanner that:
-
-1. **Tokenizes** the query with a DFA-style lexer.
-2. **Parses** it with a recursive-descent parser for a Context-Free Grammar of basic SQL `SELECT`.
-3. **Inspects the parse tree** for structure the application never intended: extra `OR` branches, tautologies, `UNION` grafts, stacked queries, comments.
-4. **Explains** why each query was flagged.
-5. **Compares** itself against a naive keyword blacklist and shows injections that slip past the blacklist but are caught by the grammar.
-
-This is stronger than keyword blacklisting, which misses obfuscated injections and can also block harmless input.
-
-> The real fix for SQL injection is parameterized queries (prepared statements). This project shows *why* grammar analysis beats plain string matching, and how a WAF can reason about query structure.
-
----
-
-## 2. Theory Background
-
-| Concept | Where it appears in this project |
+| Normal query | Injected query |
 |---|---|
-| **DFA** | The lexer (`sqli/lexer.py`) reads the query one character at a time and groups characters into tokens. |
-| **Context-Free Grammar** | The SQL grammar in `docs/grammar.md`, implemented by the parser in `sqli/parser.py`. |
-| **Derivation and parse tree** | Every accepted query produces a parse tree (`sqli/tree.py`). |
-| **Ambiguity** | The naive rule `condition → condition OR condition \| condition AND condition` is ambiguous. Our layered grammar (`condition → and_expr → not_expr → primary`) gives every query exactly one tree. |
-| **Operator precedence via grammar structure** | `NOT` binds tighter than `AND`, which binds tighter than `OR`, encoded directly in the rule layering. |
+| ![normal](docs/images/normal_query.png) | ![injected](docs/images/suspicious_query.png) |
 
----
+Our program parses the query with a Context-Free Grammar, looks at the parse tree, and flags it when the structure is not what a normal query should look like. This is stronger than a **keyword blacklist** (searching for words like `OR 1=1`), which attackers get around with extra spaces, different case or comments.
 
-## 3. Features
-
-- DFA-style lexer for 12 token types, including comments (`--`, `#`, `/* */`) and escaped quotes (`''`)
-- Recursive-descent parser for single-table `SELECT` with `WHERE`, `ORDER BY`, `LIMIT`, `UNION`, `LIKE`, `IN`, `NOT`, parentheses
-- 9 structural detection rules (see [section 10](#10-detection-rules))
-- A human-readable explanation for every flagged query
-- Parse-tree output as ASCII, Graphviz DOT and Mermaid
-- Keyword blacklist baseline for comparison
-- Evaluation harness: 10 normal + 10 injected queries, grammar vs blacklist
-- Bypass demonstration: injections that beat the blacklist
-- `sqlite3` demo showing the real effect of each attack, with and without the scanner
-- Interactive mode, file mode and a strict policy mode
-- 21 unit tests
-
----
-
-## 4. Project Structure
+## 2. How it works
 
 ```
-sql-injection-detector-cfg-g13/
-├── main.py                  CLI entry point
-├── generate_docs.py         Regenerates docs/parse_trees.md and docs/evaluation_results.md
-├── requirements.txt         Dependencies (none required)
-├── README.md                This file
-├── LICENSE                  MIT licence
-│
-├── sqli/                    Core package
-│   ├── __init__.py
-│   ├── lexer.py             DFA-style tokenizer
-│   ├── parser.py            Recursive-descent parser for the SQL CFG -> parse tree
-│   ├── tree.py              Parse-tree node + ASCII / Graphviz DOT / Mermaid export
-│   ├── detector.py          Structural anomaly detector (the scanner) and Policy
-│   ├── blacklist.py         Naive keyword blacklist (for comparison)
-│   ├── evaluate.py          Grammar vs blacklist evaluation
-│   ├── sqlite_demo.py       sqlite3 demo of the real effect of each query
-│   └── report.py            Console formatting
-│
-├── data/                    Test datasets
-│   ├── normal_queries.txt   10 legitimate queries
-│   ├── injected_queries.txt 10 injected queries
-│   └── bypass_queries.txt   Injections that bypass the blacklist
-│
-├── tests/
-│   └── test_scanner.py      21 unit tests (lexer, parser, detector, datasets)
-│
-└── docs/
-    ├── grammar.md           The CFG, ambiguity discussion, detection rules, limitations
-    ├── parse_trees.md       Normal vs injected parse trees (generated)
-    ├── evaluation_results.md  Comparison tables (generated)
-    └── slides_outline.md    10-slide presentation outline
+ SQL query  ->  Lexer  ->  Parser (CFG)  ->  Tree analysis  ->  Verdict + reason
+               tokens     parse tree        looks for OR,        SAFE or
+                                            UNION, comments,     INJECTION DETECTED
+                                            tautologies ...
 ```
 
-### How the pipeline fits together
+| Step | File | What it does |
+|---|---|---|
+| 1. Lexer | `sqli/lexer.py` | Reads characters and groups them into tokens (keyword, name, number, string...). A DFA-style scanner. |
+| 2. Parser | `sqli/parser.py` | Checks the tokens against our SQL grammar and builds a parse tree. |
+| 3. Detector | `sqli/detector.py` | Walks the tree and applies the detection rules below. |
+| 4. Report | `sqli/report.py` | Prints the verdict and the reason. |
 
-```
- SQL query text
-      │
-      ▼
- ┌───────────┐    ┌───────────┐    ┌──────────────────┐    ┌──────────────┐
- │  Lexer    │ →  │  Parser   │ →  │ Structural       │ →  │  Verdict +   │
- │ (tokens)  │    │ (CFG →    │    │ analyser         │    │  explanation │
- │           │    │ parse tree)│   │ (walk the tree)  │    │              │
- └───────────┘    └───────────┘    └──────────────────┘    └──────────────┘
-   lexer.py         parser.py         detector.py              report.py
-                    tree.py
-```
+The grammar is written so that `AND` binds tighter than `OR`. That makes it **unambiguous**: every query has exactly one parse tree. The grammar is in [`docs/grammar.md`](docs/grammar.md).
 
----
+### Detection rules
 
-## 5. Requirements and Installation
+| Rule | Meaning | Example |
+|---|---|---|
+| `OR_BRANCH` | An unexpected `OR` in `WHERE` | `id = '' OR '1'='1'` |
+| `TAUTOLOGY` | A comparison that is always true | `1=1`, `'a'='a'` |
+| `CONTRADICTION` | A comparison that is always false (blind probe) | `AND 1=2` |
+| `UNION` | A second `SELECT` glued on to steal data | `UNION SELECT username, password ...` |
+| `STACKED` | A second statement after `;` | `; DROP TABLE users` |
+| `COMMENT` | `--`, `#` or `/* */` hides the rest of the query | `admin'--` |
+| `LEXICAL` | A string or comment that is never closed | `id = '5` |
+| `PARSE_ERROR` | The query does not fit the grammar | `WHERE id = 1 OR` |
+| `AND_BRANCH` | Any `AND` in `WHERE` (only with `--strict`) | `id = 1 AND x = 2` |
 
-### Requirements
+## 3. How to run (Windows CMD)
 
-- **Python 3.8 or newer**
-- No third-party packages. The project uses only the standard library (`re`, `sqlite3`, `argparse`, `unittest`, `dataclasses`).
-- *Optional:* [Graphviz](https://graphviz.org) if you want to render exported `.dot` files as images.
+You need Python 3.8 or newer. Check with `python --version` (use `python3` if that is what works on your machine).
 
-### Check your Python version
-
-```bash
-python --version
-```
-
-On some systems the command is `python3` instead of `python`. Use whichever works on your machine.
-
-### Installation
-
-```bash
-# 1. Clone the repository
+```cmd
 git clone https://github.com/glorytoram/sql-injection-detector-cfg-g13.git
-
-# 2. Enter the project folder
 cd sql-injection-detector-cfg-g13
-
-# 3. (Optional) install requirements; this installs nothing extra
-pip install -r requirements.txt
+python main.py --sample
 ```
 
-There is **no build step**. The project runs directly from source.
-
----
-
-## 6. How to Run
-
-All commands are run from the project root folder.
-
-### Command reference
+There is nothing to build or install. Run all commands from the project folder.
 
 | Command | What it does |
 |---|---|
 | `python main.py --sample` | Scans the 3 sample queries from the project brief |
 | `python main.py --sample --tree` | Same, and prints the full parse tree of each query |
-| `python main.py --evaluate` | Table of 10 normal + 10 injected queries: grammar scanner vs blacklist |
-| `python main.py --bypass` | Shows injections that beat the blacklist but are caught by the grammar |
-| `python main.py --sqlite-demo` | Runs queries on an in-memory sqlite3 DB, with and without the scanner |
-| `python main.py -q "<query>"` | Scans one query you type on the command line |
-| `python main.py -q "<query>" --tree --compare` | Scans one query, prints the tree and the blacklist verdict |
-| `python main.py --file data/injected_queries.txt` | Scans every query in a text file (one per line) |
-| `python main.py --interactive` | Type queries one at a time; press Enter on an empty line to quit |
-| `python main.py --sample --strict` | Strict policy: also flags any `AND` branch in `WHERE` |
-| `python main.py --sample --dot out/` | Exports parse trees as `.dot` and `.mmd` files into `out/` |
-| `python -m unittest discover -s tests -v` | Runs all 21 unit tests |
-| `python generate_docs.py` | Regenerates `docs/parse_trees.md` and `docs/evaluation_results.md` |
-| `python main.py` | Prints the help text with all options |
+| `python main.py --evaluate` | 10 normal + 10 injected queries: grammar vs blacklist |
+| `python main.py --bypass` | Attacks that beat the blacklist but are caught by the grammar |
+| `python main.py --sqlite-demo` | Runs the queries on a real in-memory sqlite3 database |
+| `python main.py -q "SELECT * FROM users WHERE id = 1 OR 1=1"` | Scans one query you type |
+| `python main.py -q "..." --tree --compare` | Also shows the parse tree and the blacklist verdict |
+| `python main.py --file data/injected_queries.txt` | Scans every query in a file (one per line) |
+| `python main.py --interactive` | Type queries one by one (empty line to quit) |
+| `python main.py --sample --strict` | Strict mode: flags any `AND` as well |
+| `python main.py --sample --dot out` | Exports parse trees as Graphviz `.dot` and Mermaid `.mmd` |
+| `python -m unittest discover -v` | Runs the 21 unit tests |
+| `python main.py` | Shows the help text |
 
-### Examples
+On Windows put the whole query in **double quotes** and use **single quotes inside** it.
 
-**Scan a single query**
+### Suggested demo order
 
-```bash
-python main.py -q "SELECT * FROM users WHERE id = '' OR '1'='1'" --tree --compare
-```
+1. `python main.py --sample --tree` shows the normal and injected trees
+2. `python main.py --evaluate` shows grammar 10/10 vs blacklist 7/10
+3. `python main.py --bypass` shows the attacks the blacklist misses
+4. `python main.py --sqlite-demo` shows what each attack does to a database
+5. `python main.py --interactive` lets the audience type their own query
 
-**Scan several queries at once**
+## 4. Sample output
 
-```bash
-python main.py -q "SELECT * FROM users WHERE id = 5" -q "SELECT * FROM users WHERE id = 5 OR 1=1"
-```
-
-**Render an exported tree as an image (needs Graphviz)**
-
-```bash
-python main.py -q "SELECT * FROM users WHERE id = '' OR '1'='1'" --dot out/
-dot -Tpng out/query_1.dot -o out/query_1.png
-```
-
-> **Windows note:** put the whole query in double quotes and use single quotes inside it, as in the examples above.
-
-### Suggested live-demo order
-
-1. `python main.py --sample --tree`: normal vs injected parse trees
-2. `python main.py --evaluate`: grammar 10/10 vs blacklist 7/10
-3. `python main.py --bypass`: attacks the blacklist misses
-4. `python main.py --sqlite-demo`: what each attack does to a real database
-5. `python main.py --interactive`: let the audience type their own query
-
----
-
-## 7. Expected Output
-
-### Sample queries (`python main.py --sample`)
+Input (`python main.py --sample`):
 
 ```
 Query 1: SELECT * FROM users WHERE id = '5'
@@ -258,251 +138,61 @@ Query 3: SELECT * FROM users WHERE id = '' OR 1=1--
 Summary: 2 of 3 queries flagged as injection.
 ```
 
-### sqlite3 demo (`python main.py --sqlite-demo`), excerpt
+## 5. Results: grammar vs keyword blacklist
 
-```
-Tautology  (dump all rows)
-  SELECT username, email FROM users WHERE id = 1 OR 1=1
-  Scanner verdict : INJECTION DETECTED
-  WITHOUT scanner : 3 row(s) returned -> [('alice', ...), ('bob', ...), ('admin', ...)]
-  WITH scanner    : BLOCKED - query never reaches the database
-```
+From `python main.py --evaluate` (10 normal and 10 injected queries in `data/`):
 
-The demo uses a throw-away in-memory database. It never touches any real data.
-
----
-
-## 8. Test Cases
-
-### Unit tests
-
-```bash
-python -m unittest discover -s tests -v
-```
-
-Expected result: `Ran 21 tests ... OK`
-
-| Test class | Tests | What is checked |
+| Detector | Injections caught (out of 10) | False alarms on normal queries (out of 10) |
 |---|---|---|
-| `LexerTests` | 4 | Token types, empty string and escaped quote (`''`), unterminated string, comment tokens |
-| `ParserTests` | 5 | Normal tree shape, injected tree contains `Or`, precedence (`AND` binds tighter than `OR`), syntax error, stacked query |
-| `DetectorTests` | 8 | The 3 brief samples, no-`WHERE` query is safe, `AND` allowed by default but flagged under `--strict`, unterminated quote, `UNION`, contradiction probe, string/number coercion (`'1' = 1`), semicolon inside a string is safe |
-| `DatasetTests` | 4 | All 10 normal queries are SAFE, all 10 injected queries are detected, bypass queries beat the blacklist but not the grammar, the blacklist false positive |
+| **Grammar scanner (ours)** | **10** | **0** |
+| Keyword blacklist | 7 | 1 |
 
-### Test datasets (`data/`)
+Injections the blacklist misses, but the grammar catches (`python main.py --bypass`):
 
-| File | Contents | Expected grammar verdict |
-|---|---|---|
-| `normal_queries.txt` | 10 legitimate queries (equality, `AND`, `LIKE`, `IN`, `ORDER BY`, `LIMIT`, escaped quote, semicolon inside a string) | All SAFE |
-| `injected_queries.txt` | 10 injected queries (tautology, comment, stacked, `UNION`, blind probe, case and spacing tricks) | All INJECTION DETECTED |
-| `bypass_queries.txt` | 5 injections crafted to slip past the keyword blacklist | All INJECTION DETECTED |
-
-### Manual test queries
-
-```bash
-python main.py -q "SELECT * FROM users WHERE id = 1 OR 1=1"
-python main.py -q "SELECT * FROM users WHERE id = 1; DROP TABLE users"
-python main.py -q "SELECT * FROM users WHERE id = 1 UNION/**/SELECT username, password FROM admin"
-python main.py -q "SELECT * FROM users WHERE name = 'O''Brien'"
-python main.py -q "SELECT * FROM notes WHERE text = 'buy milk; call mom'"
-```
-
----
-
-## 9. The Grammar
-
-Terminals are in `UPPERCASE` or quotes. `|` means alternative, `( )*` means zero or more, `[ ]` means optional.
-
-```
-query        → select_stmt ( UNION [ALL] select_stmt )* [ ";" ]
-select_stmt  → SELECT select_list FROM table
-               [ WHERE condition ]
-               [ ORDER BY column [ ASC | DESC ] ]
-               [ LIMIT NUMBER ]
-select_list  → "*" | column ( "," column )*
-table        → IDENT
-column       → IDENT                      (may be table.column)
-
-condition    → and_expr ( OR and_expr )*
-and_expr     → not_expr ( AND not_expr )*
-not_expr     → NOT not_expr | primary
-primary      → "(" condition ")" | comparison
-comparison   → operand cmp_op operand
-             | operand LIKE operand
-             | operand IN "(" literal ( "," literal )* ")"
-operand      → column | literal
-literal      → NUMBER | STRING
-cmp_op       → "=" | "<>" | "!=" | "<" | ">" | "<=" | ">="
-```
-
-### Why the grammar is layered
-
-The obvious grammar `condition → condition OR condition | condition AND condition | comparison` is **ambiguous**. The expression `a=1 OR b=2 AND c=3` has two different parse trees. A scanner that reasons about tree structure needs exactly one tree per query. Splitting the rules into `condition → and_expr → not_expr → primary` encodes precedence (`NOT` > `AND` > `OR`) and makes the grammar **unambiguous**.
-
-### Normal vs injected parse tree
-
-**Normal:** `SELECT * FROM users WHERE id = '5'`
-
-```
-Where
-└── Comparison (id = '5')
-```
-
-**Injected:** `SELECT * FROM users WHERE id = '' OR '1'='1'`
-
-```
-Where
-└── Or
-    ├── Comparison (id = '')
-    └── Comparison ('1' = '1')     ← tautology, never intended by the developer
-```
-
-To a keyword filter the two queries look almost identical. The **trees** are different, and that is what the detector uses.
-
-Full details: `docs/grammar.md` and `docs/parse_trees.md`.
-
----
-
-## 10. Detection Rules
-
-Implemented in `sqli/detector.py`.
-
-| Rule | Trigger | Typical attack |
-|---|---|---|
-| `LEXICAL` | Unterminated string or block comment | `' OR 'a'='a` leaving a quote open |
-| `COMMENT` | `--`, `#` or `/* */` token | `admin'--` |
-| `PARSE_ERROR` | Token stream cannot be derived from the CFG | Malformed or tampered query |
-| `STACKED` | Another statement after `;` | `; DROP TABLE users` |
-| `UNION` | Second `SELECT` branch in the tree | `UNION SELECT username, password ...` |
-| `OR_BRANCH` | `Or` node inside `WHERE` | `' OR '1'='1` |
-| `AND_BRANCH` | `And` node inside `WHERE` (only with `--strict`) | `AND 1=1` |
-| `TAUTOLOGY` | Literal-vs-literal comparison that is true (`1=1`, `'a'='a'`, `2>1`), or a column compared with itself | `OR 1=1` |
-| `CONTRADICTION` | Literal-vs-literal comparison that is false | `AND 1=2` (blind-SQLi probe) |
-
-A query is reported as **INJECTION DETECTED** if at least one rule fires, and the explanation lists every rule that fired.
-
----
-
-## 11. Evaluation: Grammar vs Blacklist
-
-Run `python main.py --evaluate` to reproduce this.
-
-| Detector | Injections caught (of 10) | False positives (of 10 normal) |
-|---|---|---|
-| **Grammar scanner** | **10 / 10** | **0 / 10** |
-| Keyword blacklist | 7 / 10 | 1 / 10 |
-
-### Injections the blacklist misses (the grammar scanner catches all of them)
-
-| Query | Why the blacklist misses it |
+| Attack | Why the blacklist misses it |
 |---|---|
-| `... WHERE id = 5 AND 1=2` | Blind probe; no banned substring |
-| `... WHERE id = 1 oR  2 = 2` | Different case, extra spaces and a tautology other than `1=1` |
-| `... id = 1 UNION/**/SELECT ...` | A comment is used in place of the space, so `union select` never matches |
+| `... WHERE id = 1 oR  2 = 2` | Different letter case, extra spaces, and a tautology other than `1=1` |
+| `... WHERE id = 1 OR 'a'='a'` | A tautology the blacklist does not know |
+| `... WHERE id = 1 UNION/**/SELECT ...` | A comment replaces the space, so `union select` never matches |
+| `... WHERE id = 1 OR 5>3` | Not an equality test, so no banned pattern |
+| `... WHERE id = 5 AND 1=2` | Blind probe with no banned word |
 
-### False positive of the blacklist
+The blacklist also blocks the harmless query `SELECT * FROM notes WHERE text = 'buy milk; call mom'` because it contains `;`. The grammar scanner sees the `;` is inside a string and allows it.
 
-`SELECT * FROM notes WHERE text = 'buy milk; call mom'` is a perfectly legitimate query. The blacklist blocks it because it contains `;`. The grammar scanner sees that the semicolon is inside a string literal and allows it.
+**Why the grammar wins:** the blacklist matches *text*, so spacing, case and comments fool it. The grammar scanner checks *structure*, which an attacker cannot change without breaking the attack.
 
-**Why the grammar wins:** the blacklist matches *text*, so spacing, case and comments fool it. The grammar scanner matches *structure*, which an attacker cannot hide without breaking the injection itself.
+## 6. Project structure
 
-Full tables: `docs/evaluation_results.md`.
-
----
-
-## 12. Policy and Configuration
-
-What the application *expects* its `WHERE` clause to look like is controlled by the `Policy` class in `sqli/detector.py`:
-
-| Option | Default | Meaning |
-|---|---|---|
-| `allow_or` | `False` | A normal lookup query never needs `OR`, so any `OR` branch is flagged |
-| `allow_and` | `True` | Plain `AND` chains of ordinary conditions are allowed |
-| `allow_union` | `False` | Extra `UNION SELECT` branches are flagged |
-| `allow_comments` | `False` | SQL comments are flagged |
-
-The `--strict` command-line flag sets `allow_and=False`, so every boolean branch in `WHERE` is flagged.
-
-To use the scanner from your own code:
-
-```python
-from sqli import scan, Policy
-
-result = scan("SELECT * FROM users WHERE id = '' OR '1'='1'")
-print(result.verdict)       # INJECTION DETECTED
-print(result.rules)         # ['OR_BRANCH', 'TAUTOLOGY']
-print(result.explanation)   # human-readable reasons
-
-# a query that legitimately needs OR can use a custom policy
-policy = Policy(allow_or=True)
-scan("SELECT * FROM users WHERE id = 1 OR id = 2", policy)
+```
+sql-injection-detector-cfg-g13/
+├── main.py              command-line program
+├── generate_docs.py     regenerates docs/parse_trees.md and docs/evaluation_results.md
+├── requirements.txt     (no packages needed)
+├── sqli/                the program
+│   ├── lexer.py         tokenizer
+│   ├── parser.py        CFG parser -> parse tree
+│   ├── tree.py          parse tree + export to text / DOT / Mermaid
+│   ├── detector.py      structural detector (the scanner)
+│   ├── blacklist.py     simple keyword blacklist, for comparison
+│   ├── evaluate.py      grammar vs blacklist comparison
+│   ├── sqlite_demo.py   real effect on a sqlite3 database
+│   └── report.py        output formatting
+├── data/                normal, injected and bypass test queries
+├── tests/               21 unit tests
+└── docs/                grammar, parse trees, results, slide outline, images
 ```
 
----
+## 7. Tests
 
-## 13. Mapping to the Project Brief
+```cmd
+python -m unittest discover -v
+```
 
-| Objective / deliverable | Where it is satisfied |
-|---|---|
-| Write a CFG for basic `SELECT` SQL | `docs/grammar.md`, `sqli/parser.py` |
-| Parse a normal and an injected query by hand, showing different trees | `docs/parse_trees.md` |
-| Implement a SQL parser in Python | `sqli/lexer.py`, `sqli/parser.py`, `sqli/tree.py` |
-| Detect unexpected `OR`/`AND` branches in `WHERE` | `sqli/detector.py` (`OR_BRANCH`, `AND_BRANCH`, `TAUTOLOGY`) |
-| Compare with a blacklist and show it can be bypassed | `sqli/blacklist.py`, `--evaluate`, `--bypass`, `docs/evaluation_results.md` |
-| Test 10 normal + 10 injected queries | `data/*.txt`, `tests/test_scanner.py` |
-| Use `sqlite3` to show the actual query effect | `python main.py --sqlite-demo` |
-| Slides: grammar detection vs blacklisting | `docs/slides_outline.md` |
-| **Final deliverable:** a SQL scanner that flags injections by parse-tree structure and explains why | `main.py` |
+Expected: `Ran 21 tests ... OK`. They cover the lexer, the parser, the detector and the three query files in `data/` (all 10 normal queries are SAFE, all 10 injected and all 5 bypass queries are detected).
 
----
+## 8. Limitations
 
-## 14. Team and Contributions
-
-| Member | Name | Role | Files |
-|---|---|---|---|
-| **Member 1** | Priyadarshini M | SQL CFG + hand parse trees | `docs/grammar.md`, `docs/parse_trees.md` |
-| **Member 2** | Poojith B Gowda | Python SQL parser | `sqli/lexer.py`, `sqli/parser.py`, `sqli/tree.py` |
-| **Member 3** | Kiran S V | Structural anomaly detector | `sqli/detector.py` |
-| **Member 4** | Kushagra Sharma | Blacklist bypass demo + slides | `sqli/blacklist.py`, `sqli/evaluate.py`, `data/*.txt`, `docs/slides_outline.md` |
-
-The commit history of this repository records each member's individual contribution.
-
-### Presentation split
-
-| Slides | Presenter |
-|---|---|
-| 3 to 5 (theory, grammar, parse trees) | Member 1: Priyadarshini M |
-| 6 (architecture, lexer and parser) | Member 2: Poojith B Gowda |
-| 7 to 8 (detection rules, live demo) | Member 3: Kiran S V |
-| 9 to 10 (blacklist vs grammar, conclusion) | Member 4: Kushagra Sharma |
-
-All four members are prepared to answer questions on any part of the project.
-
----
-
-## 15. Limitations
-
-- The grammar covers a **subset** of SQL (single-table `SELECT`). Real WAFs need dialect-specific grammars.
-- Subqueries and hex literals such as `0x31` are not in the grammar. They are rejected as `PARSE_ERROR`, which errs on the safe side.
-- A legitimate `OR` query (`WHERE a = 1 OR a = 2`) is flagged under the default policy. Use `Policy(allow_or=True)` for applications that need it.
-- The scanner needs the full query text. It cannot see inside values that are encoded (URL-encoding, hex), so those must be decoded before scanning.
-- The lexer is a hand-written DFA-style scanner built with regular expressions, not an explicit transition table.
-- Constant-comparison checks do not account for a leading `NOT`, so `NOT (1=2)` is reported as `CONTRADICTION` although it is always true. It is still flagged.
-- **The true fix is parameterized queries (prepared statements)**, where the query structure cannot change at all. This scanner is a defence-in-depth layer.
-
----
-
-## 16. Troubleshooting
-
-| Problem | Fix |
-|---|---|
-| `python` is not recognised | Use `python3`, or install Python from python.org and tick "Add to PATH" |
-| `ModuleNotFoundError: No module named 'sqli'` | Run commands from the project root folder (the one containing `main.py`) |
-| Box-drawing characters show as `?` | Use a UTF-8 terminal; on Windows run `chcp 65001` first |
-| Query with quotes fails on Windows | Wrap the whole query in double quotes and use single quotes inside |
-| `dot` command not found | Install Graphviz, or paste the `.mmd` Mermaid output into draw.io (Arrange, Insert, Advanced, Mermaid) |
-| Tests not found | Run `python -m unittest discover -s tests -v` from the project root |
-
----
-
-*Theory of Computation (BIS503) · Group 13 · Mini Project 13*
+- The grammar covers basic single-table `SELECT` queries only. Subqueries, functions like `COUNT(*)`, table aliases and `BETWEEN` are reported as `PARSE_ERROR`.
+- A legitimate `WHERE a = 1 OR a = 2` is flagged under the default policy. The `Policy` class in `sqli/detector.py` can be changed for applications that need `OR`.
+- Encoded input (URL-encoding, hex) must be decoded before scanning.
+- The real defence against SQL injection is **parameterized queries (prepared statements)**. This scanner is an extra layer of protection.
