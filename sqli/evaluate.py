@@ -8,7 +8,11 @@ DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 
 
 def load_queries(filename):
-    path = filename if os.path.isabs(filename) else os.path.join(DATA_DIR, filename)
+    # Use the path as given if it exists (e.g. data/injected_queries.txt);
+    # otherwise look for a bare file name inside the data/ folder.
+    path = filename
+    if not os.path.isabs(path) and not os.path.exists(path):
+        path = os.path.join(DATA_DIR, filename)
     with open(path, encoding="utf-8") as fh:
         return [ln.strip() for ln in fh if ln.strip() and not ln.lstrip().startswith("#")]
 
