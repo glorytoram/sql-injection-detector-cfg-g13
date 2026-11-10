@@ -21,7 +21,7 @@
 
 ## 1. The idea in one minute
 
-An SQL injection attack works by **changing the structure** of a query..
+An SQL injection attack works by **changing the structure** of a query.
 
 A normal query has one simple condition in its `WHERE` clause:
 
