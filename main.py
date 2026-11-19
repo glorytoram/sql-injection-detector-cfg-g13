@@ -26,7 +26,7 @@ from sqli.tree import to_dot, to_mermaid
 
 SAMPLE_QUERIES = [
     "SELECT * FROM users WHERE id = '5'",
-    "SELECT * FROM users WHERE id = '' OR '1'='1'",
+    "SELECT * FROM users WHERE id = 1",
     "SELECT * FROM users WHERE id = '' OR 1=1--",
 ]
 
